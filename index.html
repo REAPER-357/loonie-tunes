@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loonie Tunes Audio Player</title>
+
+    <!-- PWA & Theme Integration -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#16a34a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon.png">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#ecfdf5',
+                            100: '#d1fae5',
+                            500: '#10b981',
+                            600: '#059669',
+                            700: '#047857',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- jsmediatags for client-side ID3/metadata extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <!-- FontAwesome for clean iconography -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col font-sans transition-colors duration-200 select-none pb-36">
+
+    <!-- TOP HEADER -->
+    <header class="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+                <i class="fa-solid fa-music"></i>
+            </div>
+            <div>
+                <h1 class="text-base font-bold tracking-tight leading-none">Local Studio</h1>
+                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Directory-Scoped Player</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button id="selectFolderBtn" class="bg-brand-600 hover:bg-brand-500 active:scale-95 text-white text-xs font-semibold px-3 py-2 rounded-xl shadow-md transition flex items-center space-x-2">
+                <i class="fa-solid fa-folder-open"></i>
+                <span id="folderBtnText" class="hidden sm:inline">Open Folder</span>
+            </button>
+            <!-- Fallback Hidden File Input for Browsers without Directory API -->
+            <input type="file" id="fallbackFolderInput" webkitdirectory directory multiple class="hidden" />
+
+            <button id="openSettingsBtn" class="p-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition">
+                <i class="fa-solid fa-gear text-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- NAVIGATION TABS -->
+    <nav class="bg-white/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 px-4 pt-2">
+        <div class="flex space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar max-w-4xl mx-auto" id="navTabs">
+            <button data-tab="tracks" class="tab-btn active px-4 py-2.5 text-xs font-semibold rounded-t-lg border-b-2 border-brand-500 text-brand-600 dark:text-brand-500 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-list-ul"></i> <span>Tracks</span>
+            </button>
+            <button data-tab="artists" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-user-astronaut"></i> <span>Artists</span>
+            </button>
+            <button data-tab="albums" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-compact-disc"></i> <span>Albums</span>
+            </button>
+            <button data-tab="genres" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-tags"></i> <span>Genres</span>
+            </button>
+            <button data-tab="playlists" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-folder-plus"></i> <span>Playlists</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- MAIN VIEW AREA -->
+    <main class="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6">
+
+        <!-- GLOBAL SEARCH & BATCH TOOLBAR (Hidden when empty) -->
+        <div id="toolbar" class="mb-4 bg-white dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div class="relative flex-1 min-w-[200px]">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="searchInput" placeholder="Search tracks, artists, albums..." class="w-full pl-9 pr-3 py-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:border-brand-500">
+            </div>
+
+            <!-- Multi-select / Batch controls -->
+            <div class="flex items-center space-x-2 text-xs">
+                <button id="btnSelectAll" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition">
+                    <i class="fa-solid fa-square-check mr-1"></i> Select All
+                </button>
+                <button id="btnDeselectAll" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition">
+                    <i class="fa-solid fa-square text-slate-400 mr-1"></i> Clear
+                </button>
+                <button id="btnAddSelectedToPlaylist" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold shadow-sm transition disabled:opacity-50 disabled:pointer-events-none" disabled>
+                    <i class="fa-solid fa-plus mr-1"></i> Add to Playlist (<span id="selectedCount">0</span>)
+                </button>
+            </div>
+        </div>
+
+        <!-- TAB CONTENT VIEWS -->
+        
+        <!-- TRACKS VIEW -->
+        <section id="view-tracks" class="tab-view space-y-2">
+            <div id="tracksList" class="space-y-1.5">
+                <!-- Initial Empty State -->
+                <div class="text-center py-16 bg-white dark:bg-slate-800/40 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-6">
+                    <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400 text-2xl">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-slate-700 dark:text-slate-200">No Audio Files Loaded</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1 mb-5">Select a folder from your device storage to import tracks cleanly without phone call recordings.</p>
+                    <button onclick="document.getElementById('selectFolderBtn').click()" class="bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-md transition">
+                        Select Music Directory
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ARTISTS VIEW -->
+        <section id="view-artists" class="tab-view hidden space-y-3">
+            <div id="artistsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+        </section>
+
+        <!-- ALBUMS VIEW -->
+        <section id="view-albums" class="tab-view hidden space-y-3">
+            <div id="albumsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+        </section>
+
+        <!-- GENRES VIEW -->
+        <section id="view-genres" class="tab-view hidden space-y-3">
+            <div id="genresGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+        </section>
+
+        <!-- PLAYLISTS VIEW -->
+        <section id="view-playlists" class="tab-view hidden space-y-4">
+            <div class="flex items-center justify-between bg-white dark:bg-slate-800/80 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-sm">
+                <div>
+                    <h2 class="text-sm font-bold">Custom Playlists</h2>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Organize and export your curated music mixes</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="btnCreatePlaylist" class="bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold px-3 py-2 rounded-xl shadow-md transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-plus"></i> <span>New Playlist</span>
+                    </button>
+                    <button id="btnExportPlaylists" class="bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center space-x-1.5" title="Export Playlists to JSON">
+                        <i class="fa-solid fa-file-export"></i> <span class="hidden sm:inline">Export</span>
+                    </button>
+                    <label id="btnImportPlaylists" class="bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl transition cursor-pointer flex items-center space-x-1.5" title="Import Playlists from JSON">
+                        <i class="fa-solid fa-file-import"></i> <span class="hidden sm:inline">Import</span>
+                        <input type="file" id="importJsonInput" accept=".json" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <div id="playlistsList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+        </section>
+
+        <!-- DETAIL MODAL FOR GROUP/PLAYLIST DRILLDOWN -->
+        <div id="detailView" class="hidden space-y-3 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                <div>
+                    <button id="btnBackFromDetail" class="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline flex items-center space-x-1 mb-1">
+                        <i class="fa-solid fa-arrow-left"></i> <span>Back to Categories</span>
+                    </button>
+                    <h2 id="detailTitle" class="text-base font-bold">Group Title</h2>
+                    <p id="detailSubtitle" class="text-xs text-slate-500 dark:text-slate-400">0 tracks</p>
+                </div>
+            </div>
+            <div id="detailTracksList" class="space-y-1.5 max-h-[60vh] overflow-y-auto"></div>
+        </div>
+
+    </main>
+
+    <!-- PERSISTENT FOOTER PLAYER & AUDIO BOOST CONTROL -->
+    <footer class="fixed bottom-8 left-0 right-0 z-20 max-w-3xl mx-auto px-4">
+        <div class="bg-white/95 dark:bg-slate-800/95 backdrop-blur-lg border border-slate-200 dark:border-slate-700/80 rounded-2xl p-3 shadow-2xl flex flex-col space-y-2">
+            
+            <!-- SCRUBBER / TIME DISPLAYS -->
+            <div class="flex items-center space-x-2 text-[10px] text-slate-500 font-mono">
+                <span id="currentTime">00:00</span>
+                <input type="range" id="seekSlider" value="0" max="100" class="flex-1 h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                <span id="durationTime">00:00</span>
+            </div>
+
+            <div class="flex items-center justify-between gap-2">
+                <!-- NOW PLAYING METADATA -->
+                <div class="flex items-center space-x-3 min-w-0 flex-1">
+                    <div id="playerArt" class="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-700 flex-shrink-0 flex items-center justify-center text-slate-400 overflow-hidden">
+                        <i class="fa-solid fa-music"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p id="playerTrackTitle" class="text-xs font-bold truncate text-slate-800 dark:text-slate-100">No track selected</p>
+                        <p id="playerArtistTitle" class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Select a track to start</p>
+                    </div>
+                </div>
+
+                <!-- MAIN PLAYBACK CONTROLS -->
+                <div class="flex items-center space-x-2 sm:space-x-3">
+                    <button id="btnShuffle" class="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition text-xs" title="Shuffle">
+                        <i class="fa-solid fa-shuffle"></i>
+                    </button>
+                    <button id="btnPrev" class="p-2 text-slate-700 dark:text-slate-200 hover:text-brand-500 transition text-sm">
+                        <i class="fa-solid fa-backward-step"></i>
+                    </button>
+                    <button id="btnPlayPause" class="w-10 h-10 bg-brand-600 hover:bg-brand-500 text-white rounded-xl shadow-lg flex items-center justify-center transition text-sm">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button id="btnNext" class="p-2 text-slate-700 dark:text-slate-200 hover:text-brand-500 transition text-sm">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                    <button id="btnRepeat" class="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition text-xs" title="Repeat Mode">
+                        <i class="fa-solid fa-repeat"></i>
+                    </button>
+                </div>
+
+                <!-- EXTRA CONTROLS / BOOST TOGGLE -->
+                <div class="flex items-center space-x-1">
+                    <button id="btnExtraControls" class="p-2 text-slate-500 hover:text-brand-500 dark:text-slate-400 rounded-xl transition" title="Audio Boost & Speed Controls">
+                        <i class="fa-solid fa-sliders text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- EXPANDABLE AUDIO BOOST & FX PANEL -->
+            <div id="extraControlsPanel" class="hidden pt-3 mt-1 border-t border-slate-200 dark:border-slate-700/60 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <!-- Volume & Boost Node -->
+                <div class="space-y-1">
+                    <div class="flex justify-between font-semibold">
+                        <span>Audio Boost / Gain (Web Audio API)</span>
+                        <span id="gainValueDisplay" class="text-brand-500">100%</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-volume-high text-slate-400 text-xs"></i>
+                        <input type="range" id="gainSlider" min="0" max="3" step="0.05" value="1" class="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg">
+                        <i class="fa-solid fa-bolt text-amber-500 text-xs" title="Boost active above 100%"></i>
+                    </div>
+                </div>
+
+                <!-- Playback Speed -->
+                <div class="space-y-1">
+                    <div class="flex justify-between font-semibold">
+                        <span>Playback Speed</span>
+                        <span id="speedValueDisplay" class="text-brand-500">1.0x</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-gauge text-slate-400 text-xs"></i>
+                        <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </footer>
+
+    <!-- SLEEK BOTTOM CREDIT -->
+    <div class="fixed bottom-1 left-0 right-0 z-10 text-center pointer-events-none">
+        <p class="text-[10px] font-mono tracking-widest text-slate-400/80 dark:text-slate-500/80 uppercase">
+            Made by REAPER-357
+        </p>
+    </div>
+
+    <!-- MODAL DIALOGS -->
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white dark:bg-slate-800 w-full max-w-sm rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                <h3 class="text-base font-bold flex items-center space-x-2">
+                    <i class="fa-solid fa-gear text-brand-500"></i>
+                    <span>Player Settings</span>
+                </h3>
+                <button class="closeModalBtn text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Dark / Light Theme Toggle -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold">Appearance Theme</p>
+                    <p class="text-[10px] text-slate-500 dark:text-slate-400">Switch between dark and light modes</p>
+                </div>
+                <button id="themeToggleBtn" class="bg-slate-100 dark:bg-slate-700 px-3 py-1.5 rounded-xl text-xs font-medium flex items-center space-x-2 border border-slate-200 dark:border-slate-600">
+                    <i id="themeIcon" class="fa-solid fa-moon"></i>
+                    <span id="themeLabel">Dark Mode</span>
+                </button>
+            </div>
+
+            <!-- Audio Engine Information -->
+            <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-1">
+                <p class="font-bold text-slate-700 dark:text-slate-300">Privacy & Scope Assurance</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    This player runs strictly client-side using native directory scopes. Call logs, voice memos, and extraneous folders outside your chosen directory are mathematically invisible to this application.
+                </p>
+            </div>
+
+            <div class="text-center pt-2">
+                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-widest">Designed by REAPER-357</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- CREATE/EDIT PLAYLIST MODAL -->
+    <div id="playlistModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white dark:bg-slate-800 w-full max-w-sm rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                <h3 id="playlistModalTitle" class="text-base font-bold">Create New Playlist</h3>
+                <button class="closeModalBtn text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <input type="hidden" id="editingPlaylistId" value="">
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold mb-1">Playlist Name</label>
+                    <input type="text" id="playlistNameInput" placeholder="e.g. Chill Beats, Gym Heavy" class="w-full px-3 py-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:border-brand-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold mb-1">Note / Description</label>
+                    <textarea id="playlistNoteInput" rows="2" placeholder="Optional notes about this track collection..." class="w-full px-3 py-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:border-brand-500"></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-2 pt-2">
+                <button class="closeModalBtn px-4 py-2 text-xs font-semibold bg-slate-100 dark:bg-slate-700 rounded-xl hover:bg-slate-200 transition">Cancel</button>
+                <button id="btnSavePlaylist" class="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white rounded-xl shadow-md transition">Save Playlist</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD MULTI-SELECTED TRACKS TO PLAYLIST DIALOG -->
+    <div id="addToPlaylistModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white dark:bg-slate-800 w-full max-w-sm rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                <h3 class="text-base font-bold">Add to Playlist</h3>
+                <button class="closeModalBtn text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+                Add <span id="modalSelectedCount" class="font-bold text-brand-500">0</span> track(s) to the selected target playlist:
+            </p>
+
+            <div id="targetPlaylistsList" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+
+            <div class="flex justify-end pt-2">
+                <button class="closeModalBtn px-4 py-2 text-xs font-semibold bg-slate-100 dark:bg-slate-700 rounded-xl hover:bg-slate-200 transition">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GENERAL CONFIRMATION MODAL -->
+    <div id="confirmModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white dark:bg-slate-800 w-full max-w-xs rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 text-center">
+            <div class="w-12 h-12 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-2xl flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 id="confirmTitle" class="text-sm font-bold">Are you sure?</h3>
+            <p id="confirmMessage" class="text-xs text-slate-500 dark:text-slate-400">This action cannot be undone.</p>
+            <div class="flex items-center justify-center space-x-2 pt-2">
+                <button id="btnConfirmCancel" class="px-4 py-2 text-xs font-semibold bg-slate-100 dark:bg-slate-700 rounded-xl hover:bg-slate-200 transition">Cancel</button>
+                <button id="btnConfirmAction" class="px-4 py-2 text-xs font-semibold bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-md transition">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN JAVASCRIPT APPLICATION LOGIC -->
+    <script>
+        // --- GLOBAL APP STATE ---
+        let masterTracks = [];       // Array of track objects: { id, name, file, artist, album, genre, duration, url }
+        let selectedTrackIds = new Set();
+        let playlists = JSON.parse(localStorage.getItem('studio_playlists') || '[]');
+        
+        let currentQueue = [];
+        let currentQueueIndex = -1;
+
+        // --- AUDIO & WEB AUDIO API NODES ---
+        const audioEl = new Audio();
+        let audioCtx = null;
+        let sourceNode = null;
+        let gainNode = null;
+
+        let isShuffle = false;
+        let repeatMode = 'none'; // 'none', 'one', 'all'
+
+        // --- DOM ELEMENT REFERENCES ---
+        const selectFolderBtn = document.getElementById('selectFolderBtn');
+        const fallbackFolderInput = document.getElementById('fallbackFolderInput');
+        const folderBtnText = document.getElementById('folderBtnText');
+        const searchInput = document.getElementById('searchInput');
+        const toolbar = document.getElementById('toolbar');
+
+        // Playback UI Elements
+        const playerTrackTitle = document.getElementById('playerTrackTitle');
+        const playerArtistTitle = document.getElementById('playerArtistTitle');
+        const btnPlayPause = document.getElementById('btnPlayPause');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+        const btnShuffle = document.getElementById('btnShuffle');
+        const btnRepeat = document.getElementById('btnRepeat');
+        const seekSlider = document.getElementById('seekSlider');
+        const currentTimeEl = document.getElementById('currentTime');
+        const durationTimeEl = document.getElementById('durationTime');
+
+        // Audio Boost Controls
+        const btnExtraControls = document.getElementById('btnExtraControls');
+        const extraControlsPanel = document.getElementById('extraControlsPanel');
+        const gainSlider = document.getElementById('gainSlider');
+        const gainValueDisplay = document.getElementById('gainValueDisplay');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValueDisplay = document.getElementById('speedValueDisplay');
+
+        // Selection & Batch Action Controls
+        const btnSelectAll = document.getElementById('btnSelectAll');
+        const btnDeselectAll = document.getElementById('btnDeselectAll');
+        const btnAddSelectedToPlaylist = document.getElementById('btnAddSelectedToPlaylist');
+        const selectedCountEl = document.getElementById('selectedCount');
+
+        // Detail View Container
+        const detailView = document.getElementById('detailView');
+        const detailTitle = document.getElementById('detailTitle');
+        const detailSubtitle = document.getElementById('detailSubtitle');
+        const detailTracksList = document.getElementById('detailTracksList');
+        const btnBackFromDetail = document.getElementById('btnBackFromDetail');
+
+        // Modals
+        const settingsModal = document.getElementById('settingsModal');
+        const openSettingsBtn = document.getElementById('openSettingsBtn');
+        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const themeIcon = document.getElementById('themeIcon');
+        const themeLabel = document.getElementById('themeLabel');
+
+        const playlistModal = document.getElementById('playlistModal');
+        const btnCreatePlaylist = document.getElementById('btnCreatePlaylist');
+        const btnSavePlaylist = document.getElementById('btnSavePlaylist');
+        const playlistNameInput = document.getElementById('playlistNameInput');
+        const playlistNoteInput = document.getElementById('playlistNoteInput');
+        const editingPlaylistId = document.getElementById('editingPlaylistId');
+
+        const addToPlaylistModal = document.getElementById('addToPlaylistModal');
+        const modalSelectedCount = document.getElementById('modalSelectedCount');
+        const targetPlaylistsList = document.getElementById('targetPlaylistsList');
+
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmTitle = document.getElementById('confirmTitle');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const btnConfirmAction = document.getElementById('btnConfirmAction');
+        const btnConfirmCancel = document.getElementById('btnConfirmCancel');
+        let onConfirmCallback = null;
+
+        const btnExportPlaylists = document.getElementById('btnExportPlaylists');
+        const importJsonInput = document.getElementById('importJsonInput');
+
+        // --- INITIALIZATION ---
+        window.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            setupTabNavigation();
+            setupAudioEngine();
+            renderPlaylistsView();
+            updateSelectionUI();
+        });
+
+        // --- THEME MANAGEMENT ---
+        function initTheme() {
+            const savedTheme = localStorage.getItem('studio_theme') || 'dark';
+            if (savedTheme === 'dark') {
+                document.documentElement.classList.add('dark');
+                themeIcon.className = 'fa-solid fa-moon';
+                themeLabel.innerText = 'Dark Mode';
+            } else {
+                document.documentElement.classList.remove('dark');
+                themeIcon.className = 'fa-solid fa-sun';
+                themeLabel.innerText = 'Light Mode';
+            }
+        }
+
+        themeToggleBtn.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('studio_theme', isDark ? 'dark' : 'light');
+            themeIcon.className = isDark ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+            themeLabel.innerText = isDark ? 'Dark Mode' : 'Light Mode';
+        });
+
+        // --- WEB AUDIO API & AUDIO ENGINE ---
+        function setupAudioEngine() {
+            audioEl.addEventListener('timeupdate', updateProgress);
+            audioEl.addEventListener('ended', handleTrackEnded);
+
+            // Audio boost and Web Audio API initialization on first user interaction
+            gainSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                gainValueDisplay.innerText = `${Math.round(val * 100)}%`;
+                if (gainNode) {
+                    gainNode.gain.value = val;
+                }
+            });
+
+            speedSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                speedValueDisplay.innerText = `${val.toFixed(1)}x`;
+                audioEl.playbackRate = val;
+            });
+        }
+
+        function initWebAudioIfNeeded() {
+            if (!audioCtx) {
+                const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtxClass) {
+                    audioCtx = new AudioCtxClass();
+                    sourceNode = audioCtx.createMediaElementSource(audioEl);
+                    gainNode = audioCtx.createGain();
+
+                    sourceNode.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+
+                    gainNode.gain.value = parseFloat(gainSlider.value);
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // --- DIRECTORY SCANNING & FILE PARSING ---
+        selectFolderBtn.addEventListener('click', async () => {
+            // Prefer native window.showDirectoryPicker if supported
+            if ('showDirectoryPicker' in window) {
+                try {
+                    const dirHandle = await window.showDirectoryPicker();
+                    folderBtnText.innerText = dirHandle.name;
+                    masterTracks = [];
+                    selectedTrackIds.clear();
+                    
+                    await scanDirectoryHandle(dirHandle);
+                    onTracksImported();
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error("Directory picker error:", err);
+                        fallbackFolderInput.click();
+                    }
+                }
+            } else {
+                fallbackFolderInput.click();
+            }
+        });
+
+        fallbackFolderInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+
+            masterTracks = [];
+            selectedTrackIds.clear();
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (isAudioFile(file.name)) {
+                    parseAndAddTrack(file, i);
+                }
+            }
+            onTracksImported();
+        });
+
+        async function scanDirectoryHandle(dirHandle) {
+            let index = 0;
+            for await (const [name, handle] of dirHandle.entries()) {
+                if (handle.kind === 'file' && isAudioFile(name)) {
+                    const file = await handle.getFile();
+                    parseAndAddTrack(file, index++);
+                }
+            }
+        }
+
+        function isAudioFile(filename) {
+            const lower = filename.toLowerCase();
+            return lower.endsWith('.mp3') || lower.endsWith('.flac') || lower.endsWith('.wav') || lower.endsWith('.m4a') || lower.endsWith('.ogg');
+        }
+
+        function parseAndAddTrack(file, index) {
+            // Clean initial guesses from filename structure
+            let nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+            let artist = 'Unknown Artist';
+            let album = 'Unknown Album';
+            let genre = 'Unknown Genre';
+            let title = nameWithoutExt;
+
+            // Attempt basic artist - title format parsing if string contains dash
+            if (nameWithoutExt.includes('-')) {
+                const parts = nameWithoutExt.split('-');
+                artist = parts[0].trim();
+                title = parts.slice(1).join('-').trim();
+            }
+
+            const trackObj = {
+                id: `track_${index}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                name: title,
+                fileName: file.name,
+                file: file,
+                artist: artist,
+                album: album,
+                genre: genre,
+                url: URL.createObjectURL(file)
+            };
+
+            masterTracks.push(trackObj);
+
+            // Asynchronously attempt to extract real ID3 tags using jsmediatags
+            if (window.jsmediatags) {
+                window.jsmediatags.read(file, {
+                    onSuccess: function(tag) {
+                        const tags = tag.tags;
+                        if (tags.title) trackObj.name = tags.title;
+                        if (tags.artist) trackObj.artist = tags.artist;
+                        if (tags.album) trackObj.album = tags.album;
+                        if (tags.genre) trackObj.genre = tags.genre;
+                        renderCurrentView();
+                    },
+                    onError: function(error) {
+                        // Silent fallback to filename parsed values
+                    }
+                });
+            }
+        }
+
+        function onTracksImported() {
+            currentQueue = [...masterTracks];
+            renderCurrentView();
+            updateSelectionUI();
+        }
+
+        // --- NAVIGATION & VIEWS ---
+        function setupTabNavigation() {
+            const tabs = document.querySelectorAll('#navTabs button');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => {
+                        t.classList.remove('active', 'border-b-2', 'border-brand-500', 'text-brand-600', 'dark:text-brand-500', 'font-semibold');
+                        t.classList.add('text-slate-500', 'dark:text-slate-400', 'font-medium');
+                    });
+                    tab.classList.add('active', 'border-b-2', 'border-brand-500', 'text-brand-600', 'dark:text-brand-500', 'font-semibold');
+                    tab.classList.remove('text-slate-500', 'dark:text-slate-400', 'font-medium');
+
+                    const target = tab.getAttribute('data-tab');
+                    document.querySelectorAll('.tab-view').forEach(v => v.classList.add('hidden'));
+                    detailView.classList.add('hidden');
+                    
+                    const targetView = document.getElementById(`view-${target}`);
+                    if (targetView) targetView.classList.remove('hidden');
+
+                    renderCurrentView();
+                });
+            });
+
+            searchInput.addEventListener('input', renderCurrentView);
+        }
+
+        function getActiveTab() {
+            const activeTabBtn = document.querySelector('#navTabs button.active');
+            return activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'tracks';
+        }
+
+        function renderCurrentView() {
+            const activeTab = getActiveTab();
+            const filterText = searchInput.value.toLowerCase().trim();
+
+            if (activeTab === 'tracks') renderTracksView(filterText);
+            else if (activeTab === 'artists') renderGroupView('artist', filterText);
+            else if (activeTab === 'albums') renderGroupView('album', filterText);
+            else if (activeTab === 'genres') renderGroupView('genre', filterText);
+            else if (activeTab === 'playlists') renderPlaylistsView();
+        }
+
+        // --- TRACKS LIST RENDERER ---
+        function renderTracksView(filterText = '') {
+            const tracksList = document.getElementById('tracksList');
+            tracksList.innerHTML = '';
+
+            const filtered = masterTracks.filter(t => 
+                t.name.toLowerCase().includes(filterText) ||
+                t.artist.toLowerCase().includes(filterText) ||
+                t.album.toLowerCase().includes(filterText)
+            );
+
+            if (filtered.length === 0) {
+                tracksList.innerHTML = `
+                    <div class="text-center py-12 text-slate-400 text-xs font-medium">
+                        ${masterTracks.length === 0 ? 'No folder loaded yet.' : 'No matching tracks found.'}
+                    </div>`;
+                return;
+            }
+
+            filtered.forEach((track, index) => {
+                const isSelected = selectedTrackIds.has(track.id);
+                const isPlaying = currentQueue[currentQueueIndex]?.id === track.id;
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border transition flex items-center justify-between space-x-3 cursor-pointer ${
+                    isPlaying 
+                        ? 'bg-brand-50/60 dark:bg-brand-900/20 border-brand-500/40' 
+                        : 'bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-700/50 border-slate-200 dark:border-slate-700/60'
+                }`;
+
+                card.innerHTML = `
+                    <div class="flex items-center space-x-3 min-w-0 flex-1">
+                        <input type="checkbox" data-id="${track.id}" ${isSelected ? 'checked' : ''} class="track-checkbox w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer">
+                        <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 text-xs flex-shrink-0">
+                            ${isPlaying ? '<i class="fa-solid fa-waveform text-brand-500 animate-pulse"></i>' : '<i class="fa-solid fa-music"></i>'}
+                        </div>
+                        <div class="min-w-0 flex-1" onclick="playTrackById('${track.id}')">
+                            <p class="text-xs font-bold truncate ${isPlaying ? 'text-brand-600 dark:text-brand-400' : ''}">${escapeHtml(track.name)}</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(track.artist)} • ${escapeHtml(track.album)}</p>
+                        </div>
+                    </div>
+                    <button onclick="event.stopPropagation(); openAddToPlaylistModal(['${track.id}'])" class="p-2 text-slate-400 hover:text-brand-500 transition text-xs" title="Add to Playlist">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                `;
+
+                // Checkbox toggle logic
+                const checkbox = card.querySelector('.track-checkbox');
+                checkbox.addEventListener('change', (e) => {
+                    e.stopPropagation();
+                    if (e.target.checked) selectedTrackIds.add(track.id);
+                    else selectedTrackIds.delete(track.id);
+                    updateSelectionUI();
+                });
+
+                tracksList.appendChild(card);
+            });
+        }
+
+        // --- CATEGORY GROUP RENDERER (Artist, Album, Genre) ---
+        function renderGroupView(groupKey, filterText = '') {
+            const containerId = `${groupKey}sGrid`;
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
+
+            // Group tracks by category
+            const groups = {};
+            masterTracks.forEach(track => {
+                const val = track[groupKey] || `Unknown ${groupKey}`;
+                if (!groups[val]) groups[val] = [];
+                groups[val].push(track);
+            });
+
+            const keys = Object.keys(groups).filter(k => k.toLowerCase().includes(filterText));
+
+            if (keys.length === 0) {
+                container.innerHTML = `<div class="col-span-full text-center py-12 text-slate-400 text-xs">No ${groupKey}s found.</div>`;
+                return;
+            }
+
+            const iconMap = { artist: 'fa-user-astronaut', album: 'fa-compact-disc', genre: 'fa-tags' };
+
+            keys.forEach(key => {
+                const tracks = groups[key];
+                const card = document.createElement('div');
+                card.className = "bg-white dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/60 hover:shadow-md transition cursor-pointer flex flex-col justify-between space-y-3";
+                
+                card.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-brand-50 dark:bg-brand-950/40 text-brand-500 flex items-center justify-center text-base">
+                            <i class="fa-solid ${iconMap[groupKey]}"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <h3 class="text-xs font-bold truncate">${escapeHtml(key)}</h3>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">${tracks.length} track(s)</p>
+                        </div>
+                    </div>
+                `;
+
+                card.addEventListener('click', () => {
+                    openDetailView(key, tracks);
+                });
+
+                container.appendChild(card);
+            });
+        }
+
+        // --- DETAIL VIEW (Group Drilldown) ---
+        function openDetailView(title, tracks) {
+            document.querySelectorAll('.tab-view').forEach(v => v.classList.add('hidden'));
+            detailView.classList.remove('hidden');
+
+            detailTitle.innerText = title;
+            detailSubtitle.innerText = `${tracks.length} track(s)`;
+            detailTracksList.innerHTML = '';
+
+            tracks.forEach((track) => {
+                const card = document.createElement('div');
+                card.className = "p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/50 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition";
+                card.innerHTML = `
+                    <div class="min-w-0 flex-1" onclick="playTrackById('${track.id}')">
+                        <p class="text-xs font-bold truncate">${escapeHtml(track.name)}</p>
+                        <p class="text-[10px] text-slate-500 truncate">${escapeHtml(track.artist)} • ${escapeHtml(track.album)}</p>
+                    </div>
+                `;
+                detailTracksList.appendChild(card);
+            });
+        }
+
+        btnBackFromDetail.addEventListener('click', () => {
+            detailView.classList.add('hidden');
+            const activeTab = getActiveTab();
+            document.getElementById(`view-${activeTab}`).classList.remove('hidden');
+        });
+
+        // --- PLAYLISTS TAB & MANAGEMENT ---
+        function renderPlaylistsView() {
+            const container = document.getElementById('playlistsList');
+            container.innerHTML = '';
+
+            if (playlists.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-12 bg-white dark:bg-slate-800/40 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-6">
+                        <p class="text-xs text-slate-500 dark:text-slate-400">No playlists created yet. Click "New Playlist" to get started.</p>
+                    </div>`;
+                return;
+            }
+
+            playlists.forEach((pl) => {
+                const card = document.createElement('div');
+                card.className = "bg-white dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-3";
+                
+                card.innerHTML = `
+                    <div>
+                        <div class="flex items-start justify-between">
+                            <h3 class="text-sm font-bold truncate">${escapeHtml(pl.name)}</h3>
+                            <div class="flex items-center space-x-1.5 text-slate-400">
+                                <button onclick="event.stopPropagation(); openEditPlaylistModal('${pl.id}')" class="hover:text-brand-500 transition text-xs p-1" title="Edit Playlist">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>
+                                <button onclick="event.stopPropagation(); deletePlaylist('${pl.id}')" class="hover:text-red-500 transition text-xs p-1" title="Delete Playlist">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">${escapeHtml(pl.note || 'No description')}</p>
+                    </div>
+                    <div class="flex items-center justify-between border-t border-slate-100 dark:border-slate-700/50 pt-2 text-xs">
+                        <span class="text-[10px] text-slate-400">${pl.trackIds.length} track(s)</span>
+                        <button onclick="playPlaylist('${pl.id}')" class="text-brand-600 dark:text-brand-400 hover:underline font-semibold text-[11px] flex items-center space-x-1">
+                            <i class="fa-solid fa-play text-[10px]"></i> <span>Play Mix</span>
+                        </button>
+                    </div>
+                `;
+
+                card.addEventListener('click', () => {
+                    const tracksInPl = masterTracks.filter(t => pl.trackIds.includes(t.id));
+                    openDetailView(`Playlist: ${pl.name}`, tracksInPl);
+                });
+
+                container.appendChild(card);
+            });
+        }
+
+        btnCreatePlaylist.addEventListener('click', () => {
+            editingPlaylistId.value = '';
+            playlistNameInput.value = '';
+            playlistNoteInput.value = '';
+            document.getElementById('playlistModalTitle').innerText = 'Create New Playlist';
+            playlistModal.classList.remove('hidden');
+        });
+
+        function openEditPlaylistModal(id) {
+            const pl = playlists.find(p => p.id === id);
+            if (!pl) return;
+
+            editingPlaylistId.value = pl.id;
+            playlistNameInput.value = pl.name;
+            playlistNoteInput.value = pl.note || '';
+            document.getElementById('playlistModalTitle').innerText = 'Edit Playlist';
+            playlistModal.classList.remove('hidden');
+        }
+
+        btnSavePlaylist.addEventListener('click', () => {
+            const name = playlistNameInput.value.trim();
+            const note = playlistNoteInput.value.trim();
+            const editId = editingPlaylistId.value;
+
+            if (!name) {
+                alert('Please enter a playlist name.');
+                return;
+            }
+
+            if (editId) {
+                const pl = playlists.find(p => p.id === editId);
+                if (pl) {
+                    pl.name = name;
+                    pl.note = note;
+                }
+            } else {
+                playlists.push({
+                    id: `pl_${Date.now()}`,
+                    name: name,
+                    note: note,
+                    trackIds: []
+                });
+            }
+
+            savePlaylistsToStorage();
+            playlistModal.classList.add('hidden');
+            renderPlaylistsView();
+        });
+
+        function deletePlaylist(id) {
+            const pl = playlists.find(p => p.id === id);
+            if (!pl) return;
+
+            showConfirmModal('Delete Playlist', `Are you sure you want to delete "${pl.name}"?`, () => {
+                playlists = playlists.filter(p => p.id !== id);
+                savePlaylistsToStorage();
+                renderPlaylistsView();
+            });
+        }
+
+        function playPlaylist(id) {
+            const pl = playlists.find(p => p.id === id);
+            if (!pl || !pl.trackIds.length) return;
+
+            currentQueue = masterTracks.filter(t => pl.trackIds.includes(t.id));
+            if (currentQueue.length > 0) {
+                currentQueueIndex = 0;
+                playTrack(currentQueue[0]);
+            }
+        }
+
+        function savePlaylistsToStorage() {
+            localStorage.setItem('studio_playlists', JSON.stringify(playlists));
+        }
+
+        // --- EXPORT & IMPORT PLAYLISTS (JSON) ---
+        btnExportPlaylists.addEventListener('click', () => {
+            if (playlists.length === 0) {
+                alert('No playlists to export.');
+                return;
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(playlists, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `local_studio_playlists_${Date.now()}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        });
+
+        importJsonInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const imported = JSON.parse(event.target.result);
+                    if (Array.isArray(imported)) {
+                        playlists = imported;
+                        savePlaylistsToStorage();
+                        renderPlaylistsView();
+                        alert('Playlists imported successfully!');
+                    } else {
+                        alert('Invalid playlist JSON format.');
+                    }
+                } catch (err) {
+                    alert('Error parsing JSON file.');
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        // --- BATCH SELECTION & MULTI-ADD TO PLAYLIST ---
+        btnSelectAll.addEventListener('click', () => {
+            masterTracks.forEach(t => selectedTrackIds.add(t.id));
+            renderCurrentView();
+            updateSelectionUI();
+        });
+
+        btnDeselectAll.addEventListener('click', () => {
+            if (selectedTrackIds.size > 0) {
+                showConfirmModal('Clear Selection', 'Deselect all currently highlighted tracks?', () => {
+                    selectedTrackIds.clear();
+                    renderCurrentView();
+                    updateSelectionUI();
+                });
+            }
+        });
+
+        function updateSelectionUI() {
+            const count = selectedTrackIds.size;
+            selectedCountEl.innerText = count;
+            btnAddSelectedToPlaylist.disabled = count === 0;
+        }
+
+        btnAddSelectedToPlaylist.addEventListener('click', () => {
+            if (selectedTrackIds.size === 0) return;
+            openAddToPlaylistModal(Array.from(selectedTrackIds));
+        });
+
+        function openAddToPlaylistModal(trackIdsToAdd) {
+            if (playlists.length === 0) {
+                alert('Please create at least one playlist first.');
+                return;
+            }
+
+            modalSelectedCount.innerText = trackIdsToAdd.length;
+            targetPlaylistsList.innerHTML = '';
+
+            playlists.forEach(pl => {
+                const btn = document.createElement('button');
+                btn.className = "w-full text-left p-3 rounded-xl bg-slate-100 dark:bg-slate-700/60 hover:bg-brand-500 hover:text-white transition flex items-center justify-between text-xs font-semibold";
+                btn.innerHTML = `
+                    <span>${escapeHtml(pl.name)}</span>
+                    <span class="text-[10px] opacity-75">${pl.trackIds.length} tracks</span>
+                `;
+                btn.addEventListener('click', () => {
+                    let addedCount = 0;
+                    trackIdsToAdd.forEach(id => {
+                        if (!pl.trackIds.includes(id)) {
+                            pl.trackIds.push(id);
+                            addedCount++;
+                        }
+                    });
+                    savePlaylistsToStorage();
+                    addToPlaylistModal.classList.add('hidden');
+                    alert(`Added ${addedCount} new track(s) to playlist "${pl.name}".`);
+                    renderPlaylistsView();
+                });
+                targetPlaylistsList.appendChild(btn);
+            });
+
+            addToPlaylistModal.classList.remove('hidden');
+        }
+
+        // --- PLAYBACK CONTROLS ---
+        function playTrackById(id) {
+            initWebAudioIfNeeded();
+            const index = currentQueue.findIndex(t => t.id === id);
+            if (index !== -1) {
+                currentQueueIndex = index;
+                playTrack(currentQueue[index]);
+            } else {
+                const track = masterTracks.find(t => t.id === id);
+                if (track) {
+                    currentQueue = [track];
+                    currentQueueIndex = 0;
+                    playTrack(track);
+                }
+            }
+        }
+
+        function playTrack(track) {
+            if (!track) return;
+
+            audioEl.src = track.url;
+            audioEl.play().then(() => {
+                btnPlayPause.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            }).catch(e => console.error(e));
+
+            playerTrackTitle.innerText = track.name;
+            playerArtistTitle.innerText = `${track.artist} • ${track.album}`;
+
+            renderCurrentView();
+        }
+
+        btnPlayPause.addEventListener('click', () => {
+            initWebAudioIfNeeded();
+            if (!audioEl.src) {
+                if (masterTracks.length > 0) playTrackById(masterTracks[0].id);
+                return;
+            }
+
+            if (audioEl.paused) {
+                audioEl.play();
+                btnPlayPause.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            } else {
+                audioEl.pause();
+                btnPlayPause.innerHTML = '<i class="fa-solid fa-play"></i>';
+            }
+        });
+
+        btnPrev.addEventListener('click', () => {
+            if (currentQueueIndex > 0) {
+                currentQueueIndex--;
+                playTrack(currentQueue[currentQueueIndex]);
+            }
+        });
+
+        btnNext.addEventListener('click', () => {
+            playNextTrack();
+        });
+
+        function playNextTrack() {
+            if (isShuffle) {
+                currentQueueIndex = Math.floor(Math.random() * currentQueue.length);
+            } else if (currentQueueIndex < currentQueue.length - 1) {
+                currentQueueIndex++;
+            } else if (repeatMode === 'all') {
+                currentQueueIndex = 0;
+            } else {
+                return;
+            }
+            playTrack(currentQueue[currentQueueIndex]);
+        }
+
+        function handleTrackEnded() {
+            if (repeatMode === 'one') {
+                audioEl.currentTime = 0;
+                audioEl.play();
+            } else {
+                playNextTrack();
+            }
+        }
+
+        btnShuffle.addEventListener('click', () => {
+            isShuffle = !isShuffle;
+            btnShuffle.classList.toggle('text-brand-500', isShuffle);
+            btnShuffle.classList.toggle('text-slate-400', !isShuffle);
+        });
+
+        btnRepeat.addEventListener('click', () => {
+            if (repeatMode === 'none') {
+                repeatMode = 'all';
+                btnRepeat.className = 'p-2 text-brand-500 transition text-xs';
+                btnRepeat.title = 'Repeat All';
+            } else if (repeatMode === 'all') {
+                repeatMode = 'one';
+                btnRepeat.className = 'p-2 text-amber-500 transition text-xs';
+                btnRepeat.title = 'Repeat One';
+            } else {
+                repeatMode = 'none';
+                btnRepeat.className = 'p-2 text-slate-400 transition text-xs';
+                btnRepeat.title = 'Repeat Off';
+            }
+        });
+
+        function updateProgress() {
+            if (!isNaN(audioEl.duration)) {
+                const pct = (audioEl.currentTime / audioEl.duration) * 100;
+                seekSlider.value = pct || 0;
+                currentTimeEl.innerText = formatTime(audioEl.currentTime);
+                durationTimeEl.innerText = formatTime(audioEl.duration);
+            }
+        }
+
+        seekSlider.addEventListener('input', (e) => {
+            if (!isNaN(audioEl.duration)) {
+                audioEl.currentTime = (e.target.value / 100) * audioEl.duration;
+            }
+        });
+
+        btnExtraControls.addEventListener('click', () => {
+            extraControlsPanel.classList.toggle('hidden');
+        });
+
+        openSettingsBtn.addEventListener('click', () => {
+            settingsModal.classList.remove('hidden');
+        });
+
+        // Close modal triggers
+        document.querySelectorAll('.closeModalBtn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                settingsModal.classList.add('hidden');
+                playlistModal.classList.add('hidden');
+                addToPlaylistModal.classList.add('hidden');
+                confirmModal.classList.add('hidden');
+            });
+        });
+
+        function showConfirmModal(title, msg, onConfirm) {
+            confirmTitle.innerText = title;
+            confirmMessage.innerText = msg;
+            onConfirmCallback = onConfirm;
+            confirmModal.classList.remove('hidden');
+        }
+
+        btnConfirmAction.addEventListener('click', () => {
+            if (onConfirmCallback) onConfirmCallback();
+            confirmModal.classList.add('hidden');
+        });
+
+        btnConfirmCancel.addEventListener('click', () => {
+            confirmModal.classList.add('hidden');
+        });
+
+        // --- HELPER UTILITIES ---
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function escapeHtml(str) {
+            return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('Service Worker registered successfully:', reg.scope))
+        .catch(err => console.log('Service Worker registration failed:', err));
+    });
+  }
+</script>
+</body>
+</html>
